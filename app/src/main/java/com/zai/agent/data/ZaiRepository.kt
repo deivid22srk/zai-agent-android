@@ -5,6 +5,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -93,8 +96,8 @@ class ZaiRepository(
     fun renameConversation(id: String, title: String): Flow<Result<Unit>> = flow {
         val payload = json.encodeToString(
             JsonObject.serializer(),
-            kotlinx.serialization.json.buildJsonObject {
-                put("title", title)
+            buildJsonObject {
+                put("title", JsonPrimitive(title))
             }
         ).toRequestBody(JSON_MEDIA_TYPE)
         val request = Request.Builder()

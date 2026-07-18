@@ -46,6 +46,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
@@ -61,7 +62,7 @@ fun LoginScreen(
     viewModel: LoginViewModel = viewModel(
         factory = viewModelFactory {
             initializer {
-                val app = LocalContext.current.applicationContext as ZaiApplication
+                val app = this[APPLICATION_KEY] as ZaiApplication
                 LoginViewModel(app.sessionStore)
             }
         }

@@ -59,6 +59,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
@@ -76,7 +77,7 @@ fun ChatScreen(
     viewModel: ChatViewModel = viewModel(
         factory = viewModelFactory {
             initializer {
-                val app = LocalContext.current.applicationContext as ZaiApplication
+                val app = this[APPLICATION_KEY] as ZaiApplication
                 ChatViewModel(app.apiClient)
             }
         }
