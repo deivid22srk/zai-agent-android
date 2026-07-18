@@ -17,7 +17,6 @@ import okhttp3.Response
 import okhttp3.sse.EventSource
 import okhttp3.sse.EventSourceListener
 import okhttp3.sse.EventSources
-import kotlinx.serialization.json.Json
 
 /**
  * Low-level client that talks directly to chat.z.ai over HTTPS using the session
