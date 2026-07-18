@@ -1,0 +1,35 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Kotlin
+.kotlin/
+
+# Generated APKs / AABs
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Java
+*.class
+
+# Logs
+*.log
+
+# Secrets / tokens / cookies
+secrets.properties
+*.keystore
+!debug.keystore
+*.jks
+google-services.json
+
+# CI
+.env

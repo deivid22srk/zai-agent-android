@@ -1,0 +1,46 @@
+<resources>
+    <string name="app_name">Zai Agent</string>
+    <string name="app_subtitle">Agent Workspace</string>
+
+    <!-- Login -->
+    <string name="login_title">Entrar na sua conta</string>
+    <string name="login_subtitle">Faça login com sua conta Z.ai pelo WebView. Suas credenciais ficam apenas no seu dispositivo.</string>
+    <string name="login_button">Abrir tela de login</string>
+    <string name="login_continue">Continuar</string>
+    <string name="login_retry">Tentar novamente</string>
+    <string name="login_status_checking">Verificando sessão…</string>
+    <string name="login_status_success">Sessão ativa</string>
+    <string name="login_status_failed">Não foi possível validar a sessão</string>
+
+    <!-- Chat list -->
+    <string name="chat_list_title">Conversas</string>
+    <string name="new_chat">Nova conversa</string>
+    <string name="empty_chats_title">Nenhuma conversa ainda</string>
+    <string name="empty_chats_desc">Crie uma nova conversa para começar a conversar com o agente Z.ai</string>
+    <string name="delete_chat">Excluir conversa</string>
+    <string name="rename_chat">Renomear</string>
+    <string name="search_chats">Buscar conversas</string>
+    <string name="logout">Sair</string>
+
+    <!-- Chat -->
+    <string name="message_placeholder">Converse com o agente…</string>
+    <string name="send">Enviar</string>
+    <string name="stop">Parar</string>
+    <string name="agent_mode">Modo Agente</string>
+    <string name="chat_mode">Modo Chat</string>
+    <string name="thinking">Pensando…</string>
+    <string name="copy">Copiar</string>
+    <string name="regenerate">Regenerar</string>
+    <string name="copied">Copiado</string>
+    <string name="error_generic">Algo deu errado. Tente novamente.</string>
+    <string name="error_network">Sem conexão com a internet</string>
+
+    <!-- Drawer -->
+    <string name="settings">Configurações</string>
+    <string name="about">Sobre</string>
+    <string name="version">Versão %1$s</string>
+
+    <!-- Notifications -->
+    <string name="notif_channel_name">Mensagens</string>
+    <string name="notif_channel_desc">Notificações de novas respostas do agente</string>
+</resources>
