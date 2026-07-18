@@ -138,3 +138,6 @@ class ZaiRepository(
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     }
 }
+
+class ApiException(val code: Int, message: String, cause: Throwable? = null) :
+    RuntimeException(message, cause)

@@ -274,9 +274,9 @@ private fun ConversationRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            if (!conversation.summary.isNullOrBlank()) {
+            if (conversation.type != null) {
                 Text(
-                    text = conversation.summary,
+                    text = if (conversation.isAgent) "Modo Agente" else "Chat",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
