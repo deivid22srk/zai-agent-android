@@ -7,9 +7,8 @@ import kotlinx.serialization.json.JsonElement
 /**
  * DTOs that mirror the public Z.ai chat endpoints.
  *
- * These shapes were derived from the public traffic that https://chat.z.ai/ uses
- * when a user is logged in via the web app. They are intentionally tolerant —
- * unknown fields are ignored by the kotlinx-serialization parser.
+ * These shapes were verified against the live https://chat.z.ai API on
+ * 2026-07-18 using a real authenticated session.
  */
 
 @Serializable
@@ -18,10 +17,21 @@ data class ZaiConversation(
     val title: String? = null,
     @SerialName("created_at") val createdAt: Long? = null,
     @SerialName("updated_at") val updatedAt: Long? = null,
-    @SerialName("model_id") val modelId: String? = null,
-    @SerialName("agent_id") val agentId: String? = null,
-    val summary: String? = null,
+    val type: String? = null,             // "general_agent" | "default"
+    @SerialName("im_context") val imContext: ImContext? = null,
+    val archived: Boolean? = null,
     val pinned: Boolean? = null,
+) {
+    val isAgent: Boolean get() = type == "general_agent"
+}
+
+@Serializable
+data class ImContext(
+    @SerialName("session_id") val sessionId: String? = null,
+    val type: String? = null,
+    val channel: String? = null,
+    val model: String? = null,
+    val status: String? = null,
 )
 
 @Serializable
@@ -30,49 +40,84 @@ data class ZaiConversationListResponse(
     val next: String? = null,
 )
 
+/**
+ * Detailed chat object returned by GET /api/v1/chats/{id}.
+ * The `chat.history.messages` field is a map of messageId -> message, in
+ * OpenWebUI format. We only need the flat ordered list to display in the UI.
+ */
 @Serializable
-data class ZaiMessage(
-    val id: String? = null,
-    val role: String,
-    val content: String,
+data class ZaiChatDetail(
+    val id: String,
+    val title: String? = null,
+    @SerialName("user_id") val userId: String? = null,
+    val chat: ChatPayload? = null,
+    @SerialName("updated_at") val updatedAt: Long? = null,
     @SerialName("created_at") val createdAt: Long? = null,
-)
-
-@Serializable
-data class ZaiSendMessageRequest(
-    @SerialName("conversation_id") val conversationId: String,
-    val content: String,
-    val role: String = "user",
-    @SerialName("model_id") val modelId: String = DEFAULT_MODEL,
-    @SerialName("agent_id") val agentId: String? = null,
-    val mode: String = "agent",
-    val stream: Boolean = true,
-    val params: Map<String, JsonElement>? = null,
+    val type: String? = null,
+    @SerialName("im_context") val imContext: ImContext? = null,
 ) {
-    companion object {
-        const val DEFAULT_MODEL = "glm-4.6"
+    @Serializable
+    data class ChatPayload(
+        val id: String? = null,
+        val models: List<String> = emptyList(),
+        val history: ChatHistory? = null,
+    )
+
+    @Serializable
+    data class ChatHistory(
+        val messages: Map<String, ChatMessage> = emptyMap(),
+        @SerialName("currentId") val currentId: String? = null,
+    )
+
+    @Serializable
+    data class ChatMessage(
+        val id: String? = null,
+        @SerialName("parentId") val parentId: String? = null,
+        @SerialName("childrenIds") val childrenIds: List<String> = emptyList(),
+        val role: String,
+        val content: String = "",
+        val timestamp: Long? = null,
+        val done: Boolean? = null,
+    )
+
+    /**
+     * Returns the messages in chronological order by walking the tree from the
+     * root (parentId == null) following the first child of each message.
+     */
+    fun orderedMessages(): List<ChatMessage> {
+        val history = chat?.history ?: return emptyList()
+        val messages = history.messages
+        if (messages.isEmpty()) return emptyList()
+        val byParent = messages.values.groupBy { it.parentId }
+        val roots = byParent[null] ?: byParent[""] ?: emptyList()
+        val result = mutableListOf<ChatMessage>()
+        var current = roots.firstOrNull()
+        val visited = mutableSetOf<String>()
+        while (current != null && current.id != null && visited.add(current.id)) {
+            result.add(current)
+            val nextId = current.childrenIds.firstOrNull() ?: break
+            current = messages[nextId]
+        }
+        return result
     }
 }
 
 @Serializable
 data class ZaiCreateConversationRequest(
-    val title: String? = null,
-    @SerialName("model_id") val modelId: String = ZaiSendMessageRequest.DEFAULT_MODEL,
-    @SerialName("agent_id") val agentId: String? = null,
-    val mode: String = "agent",
-)
+    val chat: ChatBody,
+) {
+    @Serializable
+    data class ChatBody(
+        val title: String = "",
+        val models: List<String> = listOf("glm-5.2"),
+    )
+}
 
 @Serializable
 data class ZaiCreateConversationResponse(
     val id: String,
     val title: String? = null,
+    @SerialName("user_id") val userId: String? = null,
     @SerialName("created_at") val createdAt: Long? = null,
-)
-
-@Serializable
-data class ZaiUser(
-    val id: String? = null,
-    val email: String? = null,
-    val name: String? = null,
-    val avatar: String? = null,
+    val type: String? = null,
 )

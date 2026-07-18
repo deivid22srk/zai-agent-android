@@ -3,8 +3,8 @@ package com.zai.agent.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.zai.agent.data.SessionStore
-import com.zai.agent.data.ZaiRepository
 import com.zai.agent.data.ZaiConversation
+import com.zai.agent.data.ZaiRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -16,6 +16,7 @@ data class ChatListUiState(
     val conversations: List<ZaiConversation> = emptyList(),
     val errorMessage: String? = null,
     val creating: Boolean = false,
+    val user: com.zai.agent.data.ZaiUser? = null,
 )
 
 class ChatListViewModel(
@@ -23,8 +24,12 @@ class ChatListViewModel(
     private val sessionStore: SessionStore,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(ChatListUiState())
+    private val _uiState = MutableStateFlow(ChatListUiState(user = sessionStore.getUser()))
     val uiState: StateFlow<ChatListUiState> = _uiState.asStateFlow()
+
+    init {
+        loadConversations()
+    }
 
     fun loadConversations() {
         if (_uiState.value.loading) return
@@ -47,19 +52,24 @@ class ChatListViewModel(
         }
     }
 
-    fun createConversation(title: String?, agentMode: Boolean, onCreated: (String) -> Unit) {
+    fun createConversation(onCreated: (String) -> Unit) {
         if (_uiState.value.creating) return
         _uiState.update { it.copy(creating = true, errorMessage = null) }
         viewModelScope.launch {
-            repository.createConversation(title = title, agentMode = agentMode).collect { result ->
+            repository.createConversation().collect { result ->
                 result.fold(
                     onSuccess = { convo ->
                         _uiState.update {
                             it.copy(
                                 creating = false,
-                                conversations = listOf(convo.let { c ->
-                                    ZaiConversation(id = c.id, title = c.title ?: title ?: "Nova conversa")
-                                }) + it.conversations
+                                conversations = listOf(
+                                    ZaiConversation(
+                                        id = convo.id,
+                                        title = convo.title?.takeIf { t -> t.isNotBlank() } ?: "Nova conversa",
+                                        createdAt = convo.createdAt,
+                                        type = convo.type,
+                                    )
+                                ) + it.conversations
                             )
                         }
                         onCreated(convo.id)

@@ -2,151 +2,88 @@ package com.zai.agent.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.zai.agent.data.SseEvent
-import com.zai.agent.data.ZaiApiClient
-import com.zai.agent.data.ZaiSendMessageRequest
-import kotlinx.coroutines.Job
+import com.zai.agent.data.SessionStore
+import com.zai.agent.data.ZaiRepository
+import com.zai.agent.data.ZaiConversation
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.util.UUID
 
 data class ChatUiState(
     val conversationId: String? = null,
-    val messages: List<UiMessage> = emptyList(),
-    val streaming: Boolean = false,
-    val streamingText: String = "",
-    val errorMessage: String? = null,
-    val agentMode: Boolean = true,
-    val canSend: Boolean = true,
+    val title: String? = null,
+    val agentMode: Boolean? = null,
+    val loading: Boolean = false,
+    val error: String? = null,
 )
 
-data class UiMessage(
-    val id: String,
-    val role: String,        // "user" | "assistant"
-    val content: String,
-    val pending: Boolean = false,
-)
-
+/**
+ * Drives the ChatScreen. Most of the heavy lifting (streaming, captcha, MCP
+ * tools) is handled by the WebView, so this VM is intentionally thin — it
+ * only fetches the conversation metadata (title, type) and refreshes the
+ * session cookies whenever the WebView reports new ones.
+ */
 class ChatViewModel(
-    private val apiClient: ZaiApiClient,
+    private val repository: ZaiRepository,
+    private val sessionStore: SessionStore,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
-    private var streamJob: Job? = null
-
-    fun setConversation(id: String) {
+    fun openConversation(id: String) {
         if (_uiState.value.conversationId == id) return
-        cancelStreaming()
-        _uiState.update { it.copy(conversationId = id, messages = emptyList(), streamingText = "", errorMessage = null) }
-    }
-
-    fun toggleAgentMode(enabled: Boolean) {
-        _uiState.update { it.copy(agentMode = enabled) }
-    }
-
-    fun sendMessage(text: String) {
-        val trimmed = text.trim()
-        if (trimmed.isEmpty() || _uiState.value.streaming) return
-        val conversationId = _uiState.value.conversationId ?: return
-
-        val userMessage = UiMessage(
-            id = UUID.randomUUID().toString(),
-            role = "user",
-            content = trimmed,
-        )
         _uiState.update {
-            it.copy(
-                messages = it.messages + userMessage,
-                streaming = true,
-                streamingText = "",
-                errorMessage = null,
-                canSend = false,
-            )
+            ChatUiState(conversationId = id, loading = true)
         }
-
-        streamJob = viewModelScope.launch {
-            val request = ZaiSendMessageRequest(
-                conversationId = conversationId,
-                content = trimmed,
-                mode = if (_uiState.value.agentMode) "agent" else "chat",
-            )
-            try {
-                apiClient.streamMessage(request).collect { event ->
-                    when (event) {
-                        is SseEvent.Delta -> {
-                            if (event.content.isNotEmpty()) {
-                                _uiState.update { state ->
-                                    state.copy(streamingText = state.streamingText + event.content)
-                                }
-                            }
+        viewModelScope.launch {
+            repository.getConversation(id).collect { result ->
+                result.fold(
+                    onSuccess = { detail ->
+                        _uiState.update {
+                            it.copy(
+                                loading = false,
+                                title = detail.title?.takeIf { t -> t.isNotBlank() } ?: "Conversa",
+                                agentMode = detail.type == "general_agent",
+                                error = null,
+                            )
                         }
-                        is SseEvent.Text -> {
-                            _uiState.update { state ->
-                                state.copy(streamingText = state.streamingText + event.raw)
-                            }
+                    },
+                    onFailure = { err ->
+                        _uiState.update {
+                            it.copy(
+                                loading = false,
+                                title = "Conversa",
+                                error = err.message,
+                            )
                         }
-                        SseEvent.Done -> finalizeAssistantMessage()
                     }
-                }
-                if (_uiState.value.streaming) finalizeAssistantMessage()
-            } catch (t: Throwable) {
-                _uiState.update {
-                    it.copy(
-                        streaming = false,
-                        canSend = true,
-                        errorMessage = t.message ?: "Erro de conexão",
-                    )
-                }
+                )
             }
         }
     }
 
-    private fun finalizeAssistantMessage() {
-        val current = _uiState.value
-        if (current.streamingText.isBlank() && current.errorMessage == null) {
-            _uiState.update { it.copy(streaming = false, canSend = true) }
-            return
-        }
-        val assistant = UiMessage(
-            id = UUID.randomUUID().toString(),
-            role = "assistant",
-            content = current.streamingText,
-        )
-        _uiState.update {
-            it.copy(
-                messages = it.messages + assistant,
-                streaming = false,
-                streamingText = "",
-                canSend = true,
-            )
-        }
+    /**
+     * Called from the WebView's onPageFinished via JS bridge whenever we
+     * successfully extract the conversation title from the DOM.
+     */
+    fun onTitleExtracted(title: String) {
+        if (title.isBlank()) return
+        _uiState.update { it.copy(title = title) }
     }
 
-    fun cancelStreaming() {
-        streamJob?.cancel()
-        streamJob = null
-        finalizeAssistantMessage()
-    }
-
-    fun regenerateLast() {
-        val state = _uiState.value
-        val lastUser = state.messages.lastIndexOfFirst { it.role == "user" }
-        if (lastUser < 0) return
-        val text = state.messages[lastUser].content
-        // Drop everything from the last user message onward and resend.
-        _uiState.update {
-            it.copy(messages = it.messages.subList(0, lastUser))
+    /**
+     * Called from the WebView whenever the server refreshes cookies. We
+     * persist them so the next API call (and the next WebView load) reuses
+     * the same session.
+     */
+    fun onCookiesRefreshed(cookieMap: Map<String, String>) {
+        val cookies = cookieMap.map { (name, value) ->
+            com.zai.agent.data.ZaiCookie(name = name, value = value)
         }
-        sendMessage(text)
-    }
-
-    private fun <T> List<T>.lastIndexOfFirst(predicate: (T) -> Boolean): Int {
-        for (i in indices.reversed()) if (predicate(this[i])) return i
-        return -1
+        sessionStore.saveCookies(cookies)
+        cookieMap["token"]?.let { sessionStore.saveToken(it) }
     }
 }

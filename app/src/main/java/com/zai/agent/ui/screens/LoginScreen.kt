@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -36,11 +37,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -63,7 +62,7 @@ fun LoginScreen(
         factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as ZaiApplication
-                LoginViewModel(app.sessionStore)
+                LoginViewModel(app.sessionStore, app.repository)
             }
         }
     )
@@ -76,6 +75,8 @@ fun LoginScreen(
 
     if (uiState.webViewVisible) {
         LoginWebView(
+            url = uiState.webViewUrl,
+            statusMessage = uiState.statusMessage,
             onClose = { viewModel.closeWebView() },
             onCookies = { viewModel.onCookiesUpdated(it) }
         )
@@ -147,15 +148,30 @@ fun LoginScreen(
             if (uiState.loading) {
                 Spacer(Modifier.height(24.dp))
                 CircularProgressIndicator()
+                uiState.statusMessage?.let { msg ->
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = msg,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
-            uiState.statusMessage?.let { msg ->
+            uiState.error?.let { err ->
                 Spacer(Modifier.height(16.dp))
-                Text(
-                    text = msg,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.errorContainer)
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                ) {
+                    Text(
+                        text = err,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
             }
         }
     }
@@ -165,59 +181,100 @@ fun LoginScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun LoginWebView(
+    url: String,
+    statusMessage: String?,
     onClose: () -> Unit,
     onCookies: (Map<String, String>) -> Unit,
 ) {
-    val url = remember { SessionStore.ZAI_BASE_URL }
-
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Login Z.ai") },
-                navigationIcon = {
+                actions = {
                     IconButton(onClick = onClose) {
-                        Icon(Icons.Filled.Close, contentDescription = null)
+                        Icon(Icons.Filled.Refresh, contentDescription = "Recarregar")
+                    }
+                    IconButton(onClick = onClose) {
+                        Icon(Icons.Filled.Close, contentDescription = "Fechar")
                     }
                 }
             )
         }
     ) { padding ->
-        AndroidView(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding),
-            factory = { ctx ->
-                CookieManager.getInstance().setAcceptCookie(true)
-                WebView(ctx).apply {
-                    settings.javaScriptEnabled = true
-                    settings.domStorageEnabled = true
-                    settings.databaseEnabled = true
-                    settings.setSupportZoom(true)
-                    settings.builtInZoomControls = true
-                    settings.displayZoomControls = false
-                    settings.loadWithOverviewMode = true
-                    settings.useWideViewPort = true
-                    settings.cacheMode = WebSettings.LOAD_DEFAULT
-                    webChromeClient = WebChromeClient()
-                    webViewClient = object : WebViewClient() {
-                        override fun shouldOverrideUrlLoading(
-                            view: WebView,
-                            request: WebResourceRequest
-                        ): Boolean = false
+                .padding(padding)
+        ) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { ctx ->
+                    // 1) Make sure the CookieManager accepts cookies.
+                    CookieManager.getInstance().setAcceptCookie(true)
+                    // 2) Pre-load any cookies we already have into the WebView's
+                    //    CookieManager so the user is already signed in if their
+                    //    session is still alive on chat.z.ai.
+                    val app = ctx.applicationContext as ZaiApplication
+                    val stored = app.sessionStore.getCookies()
+                    stored.forEach { c ->
+                        CookieManager.getInstance().setCookie(
+                            "https://${c.domain}",
+                            "${c.name}=${c.value}; domain=${c.domain}; path=${c.path}"
+                        )
+                    }
+                    CookieManager.getInstance().flush()
 
-                        override fun onPageFinished(view: WebView?, url: String?) {
-                            super.onPageFinished(view, url)
-                            val cookieStr = CookieManager.getInstance().getCookie(SessionStore.ZAI_BASE_URL)
-                            val map = parseCookieHeader(cookieStr)
-                            if (map["token"] != null) {
-                                onCookies(map)
+                    WebView(ctx).apply {
+                        settings.javaScriptEnabled = true
+                        settings.domStorageEnabled = true
+                        settings.databaseEnabled = true
+                        settings.setSupportZoom(true)
+                        settings.builtInZoomControls = true
+                        settings.displayZoomControls = false
+                        settings.loadWithOverviewMode = true
+                        settings.useWideViewPort = true
+                        settings.cacheMode = WebSettings.LOAD_DEFAULT
+                        settings.userAgentString = SessionStore.ZAI_USER_AGENT
+                        webChromeClient = WebChromeClient()
+                        webViewClient = object : WebViewClient() {
+                            override fun shouldOverrideUrlLoading(
+                                view: WebView,
+                                request: WebResourceRequest
+                            ): Boolean = false
+
+                            override fun onPageFinished(view: WebView?, url: String?) {
+                                super.onPageFinished(view, url)
+                                // Capture ALL cookies set on chat.z.ai at this point.
+                                val cookieStr = CookieManager.getInstance().getCookie(SessionStore.ZAI_BASE_URL)
+                                val map = parseCookieHeader(cookieStr)
+                                if (map.isNotEmpty()) {
+                                    onCookies(map)
+                                }
                             }
                         }
+                        loadUrl(url)
                     }
-                    loadUrl(url)
+                }
+            )
+
+            // Status overlay shown while we validate the session in the background.
+            if (statusMessage != null) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 8.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.primaryContainer)
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        text = statusMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
                 }
             }
-        )
+        }
     }
 }
 

@@ -2,9 +2,7 @@ package com.zai.agent
 
 import android.app.Application
 import com.zai.agent.data.AppJson
-import com.zai.agent.data.AuthCookieInterceptor
 import com.zai.agent.data.SessionStore
-import com.zai.agent.data.ZaiApiClient
 import com.zai.agent.data.ZaiRepository
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -21,9 +19,6 @@ class ZaiApplication : Application() {
         private set
 
     lateinit var httpClient: OkHttpClient
-        private set
-
-    lateinit var apiClient: ZaiApiClient
         private set
 
     lateinit var repository: ZaiRepository
@@ -46,12 +41,10 @@ class ZaiApplication : Application() {
             .writeTimeout(60, TimeUnit.SECONDS)
             .callTimeout(180, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
-            .addInterceptor(AuthCookieInterceptor(sessionStore))
             .addInterceptor(logging)
             .build()
 
-        apiClient = ZaiApiClient(httpClient, AppJson)
-        repository = ZaiRepository(httpClient, AppJson)
+        repository = ZaiRepository(httpClient, sessionStore, AppJson)
     }
 
     companion object {
